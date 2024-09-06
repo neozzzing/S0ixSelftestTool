@@ -14,7 +14,7 @@
 PATH=$PATH:$HOME
 DATE=$(date '+%Y%m%d-%H-%M')
 DIR="$(pwd -P)"
-TURBO_COLUMNS="CPU%c1,CPU%c6,CPU%c7,GFX%rc6,Pkg%pc2,Pkg%pc3,Pkg%pc6,Pkg%pc7,Pkg%pc8,Pkg%pc9,Pk%pc10,SYS%LPI"
+TURBO_COLUMNS="CPU%c1,CPU%c6,CPU%c7,Pkg%pc2,Pkg%pc3,Pkg%pc6,Pkg%pc8,Pk%pc10,SYS%LPI"
 DEEP="S0i2.0"
 SHALLOW="c10"
 PMC_CORE_SYSFS_PATH="/sys/kernel/debug/pmc_core"
@@ -30,6 +30,23 @@ touch "$PWD"/"$DATE"-s0ix-output.log
 #Function to archive S0ix debug output
 log_output() {
   echo -e "${*}" | tee -a "$PWD"/"$DATE"-s0ix-output.log
+}
+
+# Function to return the index of a column name in turbo columns 
+get_column_index(){
+  local columns="$1"
+  local target="$2"
+  IFS=',' read -ra column_array <<< "$columns"
+
+  for i in "${!column_array[@]}"; do
+    if [[ "${column_array[i]}" == "$target" ]]; then
+      echo $((i + 1))  # Return 1-based index
+      return
+    fi
+  done
+
+  # Return -1 if the column name is not found
+  echo "-1"
 }
 
 #Define script must be run as root account
@@ -256,7 +273,7 @@ pc10_idle_on() {
   local runtime_pkg10=""
   local turbostat_runtime=""
   local dmc_dir="/sys/kernel/debug/dri/0/i915_dmc_info"
-  local pc10_para="CPU%c1,CPU%c6,CPU%c7,GFX%rc6,Pkg%pc2,Pkg%pc3,Pkg%pc6,Pkg%pc7,Pkg%pc8,Pkg%pc9,Pk%pc10"
+  local pc10_para=$(echo "$TURBO_COLUMNS" | sed 's/,[^,]*$//')
   local dc5_before=""
   local dc5_after=""
   local dc6_before=""
@@ -272,10 +289,10 @@ pc10_idle_on() {
   dc5_count_delta=$(echo "$dc5_after-$dc5_before" | bc)
   dc6_count_delta=$(echo "$dc6_after-$dc6_before" | bc)
   turbostat_runtime=$("$DIR"/turbostat --quiet --show "$pc10_para" sleep 30 2>&1)
-  runtime_pkg8=$(echo "$turbostat_runtime" | sed -n '/Pkg\%pc8/{n;p}' |
-    awk '{print $9}')
-  runtime_pkg10=$(echo "$turbostat_runtime" | sed -n '/Pk\%pc10/{n;p}' |
-    awk '{print $11}')
+  runtime_pkg8=$(echo "$turbostat_runtime" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$pc10_para" "Pkg%pc8") '{print $idx}')
+  runtime_pkg10=$(echo "$turbostat_runtime" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$pc10_para" "Pk%pc10") '{print $idx}')
   log_output "\nThe CPU runtime PC10 residency when screen ON: $runtime_pkg10%"
   log_output "The CPU runtime PC8 residency when screen ON: $runtime_pkg8%\n"
   log_output "\nTurbostat log: \n$turbostat_runtime\n"
@@ -336,7 +353,7 @@ during screen ON\033[0m\n"
 
 #Function to check runtime PC10 residency when screen OFF
 pc10_idle_off() {
-  local pc10_para="CPU%c1,CPU%c6,CPU%c7,GFX%rc6,Pkg%pc2,Pkg%pc3,Pkg%pc6,Pkg%pc7,Pkg%pc8,Pkg%pc9,Pk%pc10"
+  local pc10_para=$(echo "$TURBO_COLUMNS" | sed 's/,[^,]*$//')
   log_output "\nThis script will turn off display using xset command, \
   \nplease startx first, then run this script in xterminal.\n"
   #Turn off display using xset command in GUI
@@ -353,10 +370,10 @@ pc10_idle_off() {
   local turbostat_runtime=""
   sleep 40
   turbostat_runtime=$("$DIR"/turbostat --quiet --show "$pc10_para" sleep 35 2>&1)
-  runtime_pkg8=$(echo "$turbostat_runtime" | sed -n '/Pkg\%pc8/{n;p}' |
-    awk '{print $9}')
-  runtime_pkg10=$(echo "$turbostat_runtime" | sed -n '/Pk\%pc10/{n;p}' |
-    awk '{print $11}')
+  runtime_pkg8=$(echo "$turbostat_runtime" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$pc10_para" "Pkg%pc8") '{print $idx}')
+  runtime_pkg10=$(echo "$turbostat_runtime" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$pc10_para" "Pk%pc10") '{print $idx}')
   log_output "The CPU runtime PC10 state when screen OFF: $runtime_pkg10%"
   log_output "The CPU runtime PC8 residency when screen OFF: $runtime_pkg8%\n"
   log_output "\nTurbostat log: \n$turbostat_runtime\n"
@@ -494,62 +511,29 @@ pkg_output() {
     exit 0
   fi
 
-  cc7=$(echo "$turbostat_after_s2idle" | sed -n '/CPU\%c7/{n;p}' |
-    awk '{print $3}')
+  cc7=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "CPU%c7") '{print $idx}')
   log_output "\nCPU Core C7 residency after S2idle is: $cc7"
 
-  rc6=$(echo "$turbostat_after_s2idle" | sed -n '/GFX\%rc6/{n;p}' |
-    awk '{print $4}')
-  log_output "GFX RC6 residency after S2idle is: $rc6"
-  if [ -z "$rc6" ]; then
-    pkg2=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc2/{n;p}' |
-      awk '{print $4}')
-    log_output "CPU Package C-state 2 residency after S2idle is: $pkg2"
+  #Condition always true
+  pkg2=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc2") '{print $idx}')
+  log_output "CPU Package C-state 2 residency after S2idle is: $pkg2"
+  pkg3=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc3") '{print $idx}')
+  log_output "CPU Package C-state 3 residency after S2idle is: $pkg3"
 
-    pkg3=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc3/{n;p}' |
-      awk '{print $5}')
-    log_output "CPU Package C-state 3 residency after S2idle is: $pkg3"
+  pkg8=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc8") '{print $idx}')
+  log_output "CPU Package C-state 8 residency after S2idle is: $pkg8"
 
-    pkg8=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc8/{n;p}' |
-      awk '{print $8}')
-    log_output "CPU Package C-state 8 residency after S2idle is: $pkg8"
+  pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+  log_output "CPU Package C-state 10 residency after S2idle is: $pkg10"
 
-    pkg9=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc9/{n;p}' |
-      awk '{print $9}')
-    log_output "CPU Package C-state 9 residency after S2idle is: $pkg9"
-
-    pkg10=$(echo "$turbostat_after_s2idle" | sed -n '/Pk\%pc10/{n;p}' |
-      awk '{print $10}')
-    log_output "CPU Package C-state 10 residency after S2idle is: $pkg10"
-
-    slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-      awk '{print $11}')
-    log_output "S0ix residency after S2idle is: $slp_s0"
-  else
-    pkg2=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc2/{n;p}' |
-      awk '{print $5}')
-    log_output "CPU Package C-state 2 residency after S2idle is: $pkg2"
-
-    pkg3=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc3/{n;p}' |
-      awk '{print $6}')
-    log_output "CPU Package C-state 3 residency after S2idle is: $pkg3"
-
-    pkg8=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc8/{n;p}' |
-      awk '{print $9}')
-    log_output "CPU Package C-state 8 residency after S2idle is: $pkg8"
-
-    pkg9=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc9/{n;p}' |
-      awk '{print $10}')
-    log_output "CPU Package C-state 9 residency after S2idle is: $pkg9"
-
-    pkg10=$(echo "$turbostat_after_s2idle" | sed -n '/Pk\%pc10/{n;p}' |
-      awk '{print $11}')
-    log_output "CPU Package C-state 10 residency after S2idle is: $pkg10"
-
-    slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-      awk '{print $12}')
-    log_output "S0ix residency after S2idle is: $slp_s0"
-  fi
+  slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+  log_output "S0ix residency after S2idle is: $slp_s0"
 
   s0ix_substate_af="$(cat $PMC_CORE_SYSFS_PATH/substate_residencies)" 2>&1
   if [[ -z "$s0ix_substate_af" ]] &&
@@ -692,12 +676,6 @@ achieve the shallowest s0i2.0\033[0m
     #Debug scenario 4: No S0ix residency, but has PC10 residency
     DEBUG=4
 
-  elif [[ "$(echo "scale=2; $pkg9 > 0.00" | bc)" -eq 1 ]]; then
-    log_output "\nYour system achieved PC9 residency: $pkg9, \
-but no PC10 residency:$pkg10,no S0ix residency: $slp_s0"
-    #Debug scenario 4: No PC10 residency, but has PC9 residency
-    DEBUG=4
-
   elif [[ "$(echo "scale=2; $pkg8 > 0.00" | bc)" -eq 1 ]]; then
     log_output "\nYour system achieved PC8 residency: $pkg8, \
 but no PC10 residency:$pkg10,no S0ix residency: $slp_s0"
@@ -731,8 +709,7 @@ debug_no_pc2() {
   local rc6=""
   local turbostat_after_s2idle=""
   local duration=15
-  local pc2_para="CPU%c1,CPU%c6,CPU%c7,GFX%rc6,Pkg%pc2"
-
+  local pc2_para=$(echo "$TURBO_COLUMNS" | awk '{print $1,$2,$3,$4}')
   #Run powertop --auto-tune to double check PC2 status
   if ! type powertop 1>/dev/null 2>&1; then
     log_output "\033[31mPlease install powertop tool.\033[0m\n"
@@ -752,12 +729,9 @@ debug_no_pc2() {
     exit 0
   fi
 
-  cc6=$(echo "$turbostat_after_s2idle" | sed -n '/CPU\%c6/{n;p}' |
-    awk '{print $3}')
-  rc6=$(echo "$turbostat_after_s2idle" | sed -n '/GFX\%rc6/{n;p}' |
-    awk '{print $4}')
+  cc6=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$pc2_para" "CPU%c6") '{print $idx}')
   log_output "\nCPU Core c6:$cc6"
-  log_output "GFX rc6:$rc6"
 
   #Check whether CPU Core C6 residency is available
   if [[ "$(echo "scale=2; $cc6 > 0.00" | bc)" -eq 1 ]]; then
@@ -771,20 +745,6 @@ need to check which CPU idle driver is in use:"
     return 1
   fi
 
-  #Check whether Intel graphics rc6 residency is available
-  if [[ "$(echo "scale=2; $rc6 > 0.00" | bc)" -eq 1 ]]; then
-    log_output "\nYour system Intel graphics RC6 residency is available, \
-    \nplease double confirm whether the latest Linux Kernel and the latest
-BIOS are in use, \
-    \nsome hidden kernel or FW issues are beyond this script ability to isolate"
-  else
-    log_output "\nYour system did not get the GFX RC6 residency, it's a GFX problem, \
-    \nplease check any serious Intel i915 driver failure from dmesg log, if yes please
-    \nreport a bug, or the system is installed a third party of graphics device."
-    log_output "Check any Intel graphics i915 failure from dmesg log:"
-    dmesg | grep -i i915 | grep -iE "error|fail|BUG|HANG|WARNING" 2>&1
-    return 1
-  fi
   return 0
 }
 
@@ -958,16 +918,14 @@ debug_no_pc8() {
     exit 0
   fi
 
-  cc7=$(echo "$turbostat_after_s2idle" | sed -n '/CPU\%c7/{n;p}' |
-    awk '{print $3}')
-  rc6=$(echo "$turbostat_after_s2idle" | sed -n '/GFX\%rc6/{n;p}' |
-    awk '{print $4}')
-  pkg8=$(echo "$turbostat_after_s2idle" | sed -n '/Pkg\%pc8/{n;p}' |
-    awk '{print $9}')
-  pkg10=$(echo "$turbostat_after_s2idle" | sed -n '/Pk\%pc10/{n;p}' |
-    awk '{print $11}')
-  slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-    awk '{print $12}')
+  cc7=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "CPU%c7") '{print $idx}')
+  pkg8=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc8") '{print $idx}')
+  pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+  slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
 
   #Check whether PC8,PC10 and S0ix is available after running powertop
   if [[ "$(echo "scale=2; $slp_s0 > 0.00" | bc)" -eq 1 ]]; then
@@ -991,21 +949,6 @@ which CPU idle driver is in use:"
     cat /sys/devices/system/cpu/cpuidle/current_driver
     log_output "\n\nCheck what's the CPU idle driver status:"
     grep . /sys/devices/system/cpu/cpu*/cpuidle/state*/* 2>&1
-    return 1
-  fi
-
-  #Check whether Intel graphics RC6 residency is available and high enough for pc8
-  if [[ -z "$rc6" ]]; then
-    log_output "\n\033[31mPlease check if Intel graphic i915 driver is not loaded \
-    \nor Intel graphics controller has been disabled \
-    \nor the 3rd party graphics device is installed.\033[0m\n"
-  elif [[ "$(echo "scale=2; $rc6 > 50.00" | bc)" -eq 1 ]]; then
-    log_output "\nYour system Intel graphics RC6 residency is available:$rc6"
-  else
-    log_output "\nYour system graphics RC6 residency is low, need to double check \
-the status after disabling gfx controller from BIOS setup \
-    \nor appending modprobe.blacklist=i915 kernel parameter to check any \
-deeper Package C-state available,\nthen submit an i915 bug to Intel graphics team.\n"
     return 1
   fi
 
@@ -1119,10 +1062,10 @@ debug_ltr_value() {
     exit 0
   fi
 
-  pc10=$(echo "$turbostat_after_s2idle" | sed -n '/Pk\%pc10/{n;p}' |
-    awk '{print $11}')
-  slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-    awk '{print $12}')
+  pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+  slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
 
   #Check whether IP LTR value ignore is helpful to the PC10 and S0ix state
   ltr_ip_num=$(wc -l $PMC_CORE_SYSFS_PATH/ltr_show 2>&1 | awk '{print$1}')
@@ -1140,10 +1083,10 @@ debug_ltr_value() {
 
     if turbostat_after_s2idle=$("$DIR"/turbostat --quiet --show "$TURBO_COLUMNS" \
       echo freeze 2>&1 >/sys/power/state); then
-      pc10=$(echo "$turbostat_after_s2idle" | sed -n '/Pk\%pc10/{n;p}' |
-        awk '{print $11}')
-      slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-        awk '{print $12}')
+      pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+        awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+      slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+        awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
       log_output "PC10 residency is:$pc10"
       log_output "S0ix residency is:$slp_s0"
     else
@@ -1297,8 +1240,8 @@ debug_acpi_dsm() {
 
   if turbostat_after_s2idle=$("$DIR"/turbostat --quiet --show "$TURBO_COLUMNS" \
     echo freeze 2>&1 >/sys/power/state); then
-    slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '/SYS\%LPI/{n;p}' |
-      awk '{print $12}')
+    slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+      awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
   else
     log_output "\nThe system failed to place S2idle entry command, please re-try.\n"
     exit 0
