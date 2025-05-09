@@ -919,14 +919,15 @@ debug_no_pc8() {
     exit 0
   fi
 
+  TURBO_RESULT_COLUMNS=$(echo "$turbostat_after_s2idle" | sed -n '2p' | sed 's/\t/,/g')
   cc7=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "CPU%c7") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "CPU%c7") '{print $idx}')
   pkg8=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc8") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pkg%pc8") '{print $idx}')
   pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pk%pc10") '{print $idx}')
   slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "SYS%LPI") '{print $idx}')
 
   #Check whether PC8,PC10 and S0ix is available after running powertop
   if [[ "$(echo "scale=2; $slp_s0 > 0.00" | bc)" -eq 1 ]]; then
@@ -1063,10 +1064,11 @@ debug_ltr_value() {
     exit 0
   fi
 
+  TURBO_RESULT_COLUMNS=$(echo "$turbostat_after_s2idle" | sed -n '2p' | sed 's/\t/,/g')
   pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pk%pc10") '{print $idx}')
   slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "SYS%LPI") '{print $idx}')
 
   #Check whether IP LTR value ignore is helpful to the PC10 and S0ix state
   ltr_ip_num=$(wc -l $PMC_CORE_SYSFS_PATH/ltr_show 2>&1 | awk '{print$1}')
@@ -1084,10 +1086,11 @@ debug_ltr_value() {
 
     if turbostat_after_s2idle=$("$DIR"/turbostat --quiet --show "$TURBO_COLUMNS" \
       echo freeze 2>&1 >/sys/power/state); then
+      TURBO_RESULT_COLUMNS=$(echo "$turbostat_after_s2idle" | sed -n '2p' | sed 's/\t/,/g')
       pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-        awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+        awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pk%pc10") '{print $idx}')
       slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-        awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+        awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "SYS%LPI") '{print $idx}')
       log_output "PC10 residency is:$pc10"
       log_output "S0ix residency is:$slp_s0"
     else
@@ -1241,8 +1244,9 @@ debug_acpi_dsm() {
 
   if turbostat_after_s2idle=$("$DIR"/turbostat --quiet --show "$TURBO_COLUMNS" \
     echo freeze 2>&1 >/sys/power/state); then
+    TURBO_RESULT_COLUMNS=$(echo "$turbostat_after_s2idle" | sed -n '2p' | sed 's/\t/,/g')
     slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-      awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+      awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "SYS%LPI") '{print $idx}')
   else
     log_output "\nThe system failed to place S2idle entry command, please re-try.\n"
     exit 0
