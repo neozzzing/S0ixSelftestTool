@@ -435,8 +435,8 @@ pkg_output() {
   local rc6=""
   local cc7=""
   local pkg2=""
+  local pkg6=""
   local pkg8=""
-  local pkg9=""
   local pkg10=""
   local slp_s0=""
   local turbostat_after_s2idle=""
@@ -511,28 +511,29 @@ pkg_output() {
     exit 0
   fi
 
+  TURBO_RESULT_COLUMNS=$(echo "$turbostat_after_s2idle" | sed -n '2p' | sed 's/\t/,/g')
   cc7=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "CPU%c7") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "CPU%c7") '{print $idx}')
   log_output "\nCPU Core C7 residency after S2idle is: $cc7"
 
-  #Condition always true
-  pkg2=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc2") '{print $idx}')
-  log_output "CPU Package C-state 2 residency after S2idle is: $pkg2"
-  pkg3=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc3") '{print $idx}')
-  log_output "CPU Package C-state 3 residency after S2idle is: $pkg3"
-
-  pkg8=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pkg%pc8") '{print $idx}')
-  log_output "CPU Package C-state 8 residency after S2idle is: $pkg8"
+  for i in 2 3 6 8; do
+    column_idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pkg%pc$i")
+    if [ ${column_idx} -eq -1 ]; then
+      log_output "\033[31mThe system does not support the Pkg%pc$i.\033[0m"
+    else
+      pkg=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
+        awk -v idx=$column_idx '{print $idx}')
+      log_output "CPU Package C-state $i residency after S2idle is: $pkg"
+      eval "pkg$i=\$pkg"
+    fi
+  done
 
   pkg10=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "Pk%pc10") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "Pk%pc10") '{print $idx}')
   log_output "CPU Package C-state 10 residency after S2idle is: $pkg10"
 
   slp_s0=$(echo "$turbostat_after_s2idle" | sed -n '3p' |
-    awk -v idx=$(get_column_index "$TURBO_COLUMNS" "SYS%LPI") '{print $idx}')
+    awk -v idx=$(get_column_index "$TURBO_RESULT_COLUMNS" "SYS%LPI") '{print $idx}')
   log_output "S0ix residency after S2idle is: $slp_s0"
 
   s0ix_substate_af="$(cat $PMC_CORE_SYSFS_PATH/substate_residencies)" 2>&1
